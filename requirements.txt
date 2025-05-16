@@ -1,0 +1,6 @@
+streamlit
+matplotlib
+sqlalchemy
+python-dotenv
+pandas
+openpyxl 
