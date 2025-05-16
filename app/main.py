@@ -5,6 +5,8 @@ import math
 import pandas as pd
 import matplotlib.pyplot as plt
 import altair as alt
+import streamlit as st
+from pathlib import Path
 
 # Добавляем корневую директорию проекта (fire_column_app) в sys.path
 # Это позволяет Python корректно находить пакет 'app'
@@ -13,7 +15,6 @@ PROJECT_ROOT = os.path.dirname(SCRIPT_DIR) # Путь к fire_column_app/
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-import streamlit as st
 from app.utils import calc_section, calc_capacity, discretize_concrete_core_into_rings, steel_ring_area, steel_working_condition_coeff, concrete_working_condition_coeff, concrete_strain_by_temp
 
 # После импортов:
@@ -50,21 +51,6 @@ def get_reduction_coeff(slenderness):
 # 1. st.set_page_config() должен быть первой командой Streamlit
 st.set_page_config(page_title="Расчёт огнестойкости сталетрубобетонной колонны", page_icon="🔥", layout="wide")
 
-# Загрузка данных о прогреве из JSON файла
-THERMAL_DATA_JSON_PATH = os.path.join(PROJECT_ROOT, "thermal_data.json")
-loaded_thermal_data = []
-try:
-    with open(THERMAL_DATA_JSON_PATH, 'r', encoding='utf-8') as f:
-        loaded_thermal_data = json.load(f)
-    if loaded_thermal_data:
-        st.toast("Данные о температурах успешно загружены из thermal_data.json", icon="✅")
-    else:
-        st.toast("Файл thermal_data.json пуст.", icon="⚠️")
-except FileNotFoundError:
-    st.toast(f"Файл thermal_data.json не найден. Запустите convert_excel_to_json.py.", icon="❌")
-except json.JSONDecodeError:
-    st.toast(f"Ошибка чтения файла thermal_data.json. Файл поврежден?", icon="❌")
-
 # --- Центрированный заголовок приложения ---
 st.markdown('<div style="text-align:center; font-size:2em; font-weight:700; font-family:Segoe UI, Arial, sans-serif; margin-bottom:0.7em; margin-top:0.2em;">🔥 Расчёт огнестойкости сталетрубобетонной колонны</div>', unsafe_allow_html=True)
 
@@ -74,29 +60,88 @@ with st.sidebar:
     thickness = st.number_input("Толщина стальной стенки, мм", min_value=3.0, max_value=9.0, value=6.3, step=0.1)
     steel_strength_normative = st.number_input("Нормативное сопротивление стали, МПа", min_value=200, max_value=600, value=355)
     steel_elastic_modulus = st.number_input("Модуль упругости стали, МПа", min_value=180000, max_value=220000, value=210000)
-    concrete_strength_normative = st.number_input("Нормативное сопротивление бетона, МПа", min_value=10, max_value=60, value=42)
+    concrete_strength_normative = st.number_input("Нормативное сопротивление бетона, МПа", min_value=10.0, max_value=60.0, value=42.0, step=0.1)
     height = st.number_input("Высота колонны, м", min_value=1.0, max_value=20.0, value=3.4, step=0.1)
     effective_length_coefficient = st.number_input("Коэффициент расчетной длины", min_value=0.5, max_value=2.0, value=0.7, step=0.1)
-    normative_load = st.number_input("Нормативная нагрузка, кН", min_value=10, max_value=10000, value=635)
+    normative_load = st.number_input("Нормативная нагрузка, кН", min_value=10.0, max_value=10000.0, value=635.0, step=0.1)
     fire_exposure_time = st.number_input("Время огневого воздействия, мин", min_value=0, max_value=240, value=60, step=5)
+
+# Загрузка данных о температурах из JSON-файлов
+def load_thermal_data():
+    # Используем абсолютный путь к директории thermal_data
+    thermal_dir = Path(PROJECT_ROOT) / "thermal_data"
+    
+    if not thermal_dir.exists():
+        st.error(f"Директория {thermal_dir} не найдена!")
+        return {}
+        
+    thermal_files = list(thermal_dir.glob("*.json"))
+    if not thermal_files:
+        st.error(f"JSON файлы не найдены в директории {thermal_dir}!")
+        return {}
+    
+    thermal_data = {}
+    for file in thermal_files:
+        try:
+            with open(file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            # Имя файла вида "200x3.json" -> диаметр 200, толщина 3
+            name = file.stem
+            diameter, thickness = map(int, name.split('x'))
+            thermal_data[(diameter, thickness)] = data
+        except Exception as e:
+            st.error(f"Ошибка при загрузке файла {file.name}: {str(e)}")
+            
+    return thermal_data
+
+# Функция для выбора ближайшего файла по геометрическим размерам
+def get_closest_thermal_data(thermal_data, diameter, thickness):
+    if not thermal_data:
+        st.error("Нет доступных температурных данных!")
+        return None
+        
+    available_diameters = sorted(set(d for d, _ in thermal_data.keys()))
+    available_thicknesses = sorted(set(t for _, t in thermal_data.keys()))
+    
+    if not available_diameters or not available_thicknesses:
+        st.error("Нет доступных размеров в температурных данных!")
+        return None
+    
+    # Находим ближайший диаметр
+    closest_diameter = min(available_diameters, key=lambda d: abs(d - diameter))
+    # Находим ближайшую толщину
+    closest_thickness = min(available_thicknesses, key=lambda t: abs(t - thickness))
+    
+    st.info(f"Температурные данные приняты для диаметра {closest_diameter} мм и толщины {closest_thickness} мм")
+    
+    return thermal_data.get((closest_diameter, closest_thickness), None)
+
+# Загрузка данных о температурах
+thermal_data = load_thermal_data()
+closest_data = get_closest_thermal_data(thermal_data, diameter, thickness)
+
+if closest_data:
+    st.toast(f"Загружены данные для диаметра {diameter} мм и толщины {thickness} мм", icon="✅")
+else:
+    st.toast("Данные не найдены", icon="❌")
 
 # Расчет и отображение разбиения бетонного ядра на кольца
 fire_exposure_time_sec = fire_exposure_time * 60
 concrete_rings_details = discretize_concrete_core_into_rings(
     diameter, 
     thickness, 
-    loaded_thermal_data, 
+    closest_data, 
     fire_exposure_time_sec,
     num_rings=5,  # Устанавливаем 5 колец
     ring_thicknesses=[10, 20, 20, 20, None]  # Задаем толщины колец, последнее кольцо займет оставшееся пространство
 )
 temp_steel = None
-if loaded_thermal_data:
-    suitable_records = [r for r in loaded_thermal_data if isinstance(r.get('time_minutes'), (int, float)) and r.get('time_minutes', -1) <= fire_exposure_time_sec]
+if closest_data:
+    suitable_records = [r for r in closest_data if isinstance(r.get('time_minutes'), (int, float)) and r.get('time_minutes', -1) <= fire_exposure_time_sec]
     if suitable_records:
         thermal_record = max(suitable_records, key=lambda x: x.get('time_minutes', -1))
     else:
-        all_time_records = [r for r in loaded_thermal_data if isinstance(r.get('time_minutes'), (int, float))]
+        all_time_records = [r for r in closest_data if isinstance(r.get('time_minutes'), (int, float))]
         if all_time_records:
             thermal_record = min(all_time_records, key=lambda x: x.get('time_minutes', float('inf')))
         else:
@@ -166,18 +211,18 @@ if N_cr_for_summary_table is not None and N_cr_for_summary_table > 0:
     N_final_for_summary_table = N_total * reduction_coeff_for_summary_table
 
 # График несущей способности колонны от времени
-if loaded_thermal_data:
-    times = sorted(set(int(r['time_minutes'])//60 for r in loaded_thermal_data if isinstance(r.get('time_minutes'), (int, float))))
+if closest_data:
+    times = sorted(set(int(r['time_minutes'])//60 for r in closest_data if isinstance(r.get('time_minutes'), (int, float))))
     times = [t for t in range(0, max(times)+1)] if times else [0]
     N_final_list = []
     for t_min in times:
         t_sec = t_min * 60
         # Получаем thermal_record для этого времени
-        suitable_records = [r for r in loaded_thermal_data if isinstance(r.get('time_minutes'), (int, float)) and r.get('time_minutes', -1) <= t_sec]
+        suitable_records = [r for r in closest_data if isinstance(r.get('time_minutes'), (int, float)) and r.get('time_minutes', -1) <= t_sec]
         if suitable_records:
             thermal_record = max(suitable_records, key=lambda x: x.get('time_minutes', -1))
         else:
-            all_time_records = [r for r in loaded_thermal_data if isinstance(r.get('time_minutes'), (int, float))]
+            all_time_records = [r for r in closest_data if isinstance(r.get('time_minutes'), (int, float))]
             if all_time_records:
                 thermal_record = min(all_time_records, key=lambda x: x.get('time_minutes', float('inf')))
             else:
@@ -282,12 +327,12 @@ if concrete_rings_details:
         })
 # Данные по стальному кольцу
 s_temp_steel = None
-if loaded_thermal_data:
-    suitable_records = [r for r in loaded_thermal_data if isinstance(r.get('time_minutes'), (int, float)) and r.get('time_minutes', -1) <= fire_exposure_time_sec]
+if closest_data:
+    suitable_records = [r for r in closest_data if isinstance(r.get('time_minutes'), (int, float)) and r.get('time_minutes', -1) <= fire_exposure_time_sec]
     if suitable_records:
         s_thermal_record = max(suitable_records, key=lambda x: x.get('time_minutes', -1))
     else:
-        all_time_records = [r for r in loaded_thermal_data if isinstance(r.get('time_minutes'), (int, float))]
+        all_time_records = [r for r in closest_data if isinstance(r.get('time_minutes'), (int, float))]
         if all_time_records:
             s_thermal_record = min(all_time_records, key=lambda x: x.get('time_minutes', float('inf')))
         else:
@@ -661,7 +706,7 @@ with tab1:
 with tab2:
     # --- Центрированный заголовок графика ---
     st.markdown('<div style="text-align:center; font-size:1.25em; font-weight:700; font-family:Segoe UI, Arial, sans-serif; margin-bottom:0.5em;">График несущей способности от времени</div>', unsafe_allow_html=True)
-    if loaded_thermal_data and N_final_list and times:
+    if closest_data and N_final_list and times:
         chart_df = pd.DataFrame({
             "Время, мин": times,
             "Несущая способность, кН": N_final_list
