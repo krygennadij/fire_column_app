@@ -48,7 +48,7 @@ def get_reduction_coeff(slenderness):
     return table[-1][1]
 
 # 1. st.set_page_config() должен быть первой командой Streamlit
-st.set_page_config(page_title="Расчёт трубобетонной колонны", page_icon="🔥", layout="wide")
+st.set_page_config(page_title="Расчёт огнестойкости сталетрубобетонной колонны", page_icon="🔥", layout="wide")
 
 # Загрузка данных о прогреве из JSON файла
 THERMAL_DATA_JSON_PATH = os.path.join(PROJECT_ROOT, "thermal_data.json")
@@ -66,7 +66,7 @@ except json.JSONDecodeError:
     st.toast(f"Ошибка чтения файла thermal_data.json. Файл поврежден?", icon="❌")
 
 # --- Центрированный заголовок приложения ---
-st.markdown('<div style="text-align:center; font-size:2em; font-weight:700; font-family:Segoe UI, Arial, sans-serif; margin-bottom:0.7em; margin-top:0.2em;">🔥 Расчёт трубобетонной колонны</div>', unsafe_allow_html=True)
+st.markdown('<div style="text-align:center; font-size:2em; font-weight:700; font-family:Segoe UI, Arial, sans-serif; margin-bottom:0.7em; margin-top:0.2em;">🔥 Расчёт огнестойкости сталетрубобетонной колонны</div>', unsafe_allow_html=True)
 
 with st.sidebar:
     st.header("Ввод исходных данных")
@@ -231,7 +231,7 @@ if loaded_thermal_data:
         N_final = N_total * reduction_coeff
         N_final_list.append(N_final)
     # График
-    fig, ax = plt.subplots(figsize=(6,3))
+    fig, ax = plt.subplots(figsize=(6,9))  # Увеличиваем высоту с 4.5 до 9
     ax.plot(times, N_final_list, marker='o', color='crimson')
     ax.set_xlabel('Время, мин')
     ax.set_ylabel('Несущая способность колонны, кН')
@@ -682,8 +682,8 @@ with tab2:
                 break
         # Основная линия
         line = alt.Chart(chart_df).mark_line(point=True, color="#d62728", strokeWidth=3).encode(
-            x=alt.X("Время, мин", axis=alt.Axis(title="Время огневого воздействия, мин")),
-            y=alt.Y("Несущая способность, кН", axis=alt.Axis(title="Несущая способность, кН")),
+            x=alt.X("Время, мин", axis=alt.Axis(title="Время огневого воздействия, мин", titleFontSize=16)),
+            y=alt.Y("Несущая способность, кН", axis=alt.Axis(title="Несущая способность, кН", titleFontSize=16)),
             tooltip=["Время, мин", "Несущая способность, кН"]
         )
         # Горизонтальная линия нормативной нагрузки
@@ -708,9 +708,9 @@ with tab2:
                 x="x",
                 y="y1"
             )
-            chart = (line + norm_line + fire_limit_vline + fire_limit_point).properties(height=400).interactive()
+            chart = (line + norm_line + fire_limit_vline + fire_limit_point).properties(height=800).interactive()
         else:
-            chart = (line + norm_line).properties(height=400).interactive()
+            chart = (line + norm_line).properties(height=800).interactive()
         st.altair_chart(chart, use_container_width=True)
         # --- Легенда под графиком ---
         legend_html = f'''

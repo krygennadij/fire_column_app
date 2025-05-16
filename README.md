@@ -6,7 +6,7 @@
 2. Перейди в директорию `fire_column_app`:
    `cd fire_column_app`
 3. Запусти приложение:
-   `python -m streamlit run app.main`
+   `streamlit run main.py`
 
 ## Описание
 Приложение для расчёта несущей способности трубобетонных колонн при пожаре. Включает в себя:
