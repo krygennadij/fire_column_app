@@ -1,6 +1,6 @@
 import sys
 import os
-import json # Для загрузки JSON
+import json
 import math
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -8,16 +8,13 @@ import altair as alt
 import streamlit as st
 from pathlib import Path
 
-# Добавляем корневую директорию проекта (fire_column_app) в sys.path
-# Это позволяет Python корректно находить пакет 'app'
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__)) # Путь к текущему файлу (app/main.py)
-PROJECT_ROOT = os.path.dirname(SCRIPT_DIR) # Путь к fire_column_app/
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from app.utils import calc_section, calc_capacity, discretize_concrete_core_into_rings, steel_ring_area, steel_working_condition_coeff, concrete_working_condition_coeff, concrete_strain_by_temp
 
-# После импортов:
 def get_reduction_coeff(slenderness):
     table = [
         (0.0, 1.0),
@@ -48,10 +45,7 @@ def get_reduction_coeff(slenderness):
             return y0 + (y1 - y0) * (slenderness - x0) / (x1 - x0)
     return table[-1][1]
 
-# 1. st.set_page_config() должен быть первой командой Streamlit
 st.set_page_config(page_title="Расчёт огнестойкости сталетрубобетонной колонны", page_icon="🔥", layout="wide")
-
-# --- Центрированный заголовок приложения ---
 st.markdown('<div style="text-align:center; font-size:2em; font-weight:700; font-family:Segoe UI, Arial, sans-serif; margin-bottom:0.7em; margin-top:0.2em;">🔥 Расчёт огнестойкости сталетрубобетонной колонны</div>', unsafe_allow_html=True)
 
 with st.sidebar:
@@ -66,11 +60,8 @@ with st.sidebar:
     normative_load = st.number_input("Нормативная нагрузка, кН", min_value=10.0, max_value=10000.0, value=635.0, step=0.1)
     fire_exposure_time = st.number_input("Время огневого воздействия, мин", min_value=0, max_value=240, value=60, step=5)
 
-# Загрузка данных о температурах из JSON-файлов
 def load_thermal_data():
-    # Используем абсолютный путь к директории thermal_data
     thermal_dir = Path(PROJECT_ROOT) / "thermal_data"
-    
     if not thermal_dir.exists():
         st.error(f"Директория {thermal_dir} не найдена!")
         return {}
@@ -85,7 +76,6 @@ def load_thermal_data():
         try:
             with open(file, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-            # Имя файла вида "200x3.json" -> диаметр 200, толщина 3
             name = file.stem
             diameter, thickness = map(int, name.split('x'))
             thermal_data[(diameter, thickness)] = data
@@ -94,7 +84,6 @@ def load_thermal_data():
             
     return thermal_data
 
-# Функция для выбора ближайшего файла по геометрическим размерам
 def get_closest_thermal_data(thermal_data, diameter, thickness):
     if not thermal_data:
         st.error("Нет доступных температурных данных!")
@@ -107,16 +96,13 @@ def get_closest_thermal_data(thermal_data, diameter, thickness):
         st.error("Нет доступных размеров в температурных данных!")
         return None
     
-    # Находим ближайший диаметр
     closest_diameter = min(available_diameters, key=lambda d: abs(d - diameter))
-    # Находим ближайшую толщину
     closest_thickness = min(available_thicknesses, key=lambda t: abs(t - thickness))
     
     st.info(f"Температурные данные приняты для диаметра {closest_diameter} мм и толщины {closest_thickness} мм")
     
     return thermal_data.get((closest_diameter, closest_thickness), None)
 
-# Загрузка данных о температурах
 thermal_data = load_thermal_data()
 closest_data = get_closest_thermal_data(thermal_data, diameter, thickness)
 
