@@ -11,89 +11,76 @@ def calc_section(diameter, thickness):
 def calc_capacity(A_steel, A_conc, steel_strength, concrete_strength):
     return concrete_strength * A_conc * 1e6 + steel_strength * A_steel * 1e6 
 
-def discretize_concrete_core_into_rings(
-    outer_column_diameter_mm: float, 
-    steel_wall_thickness_mm: float,
-    thermal_data_list: list[dict], 
-    fire_exposure_time_sec: float,
-    num_rings: int = 5,
-    ring_thicknesses: list[float] = [10, 20, 20, 20, None]
-) -> list[dict]:
-    print(f"--- Utils Debug: discretize_concrete_core_into_rings called ---")
-    print(f"--- Utils Debug: fire_exposure_time_sec = {fire_exposure_time_sec} ---")
-    if thermal_data_list:
-        print(f"--- Utils Debug: thermal_data_list contains {len(thermal_data_list)} records. First record keys: {thermal_data_list[0].keys() if thermal_data_list else 'N/A'} ---")
-    else:
-        print("--- Utils Debug: thermal_data_list is empty. ---")
-
-    column_radius_mm = outer_column_diameter_mm / 2.0
-    concrete_core_outer_radius_mm = column_radius_mm - steel_wall_thickness_mm
-    rings_details = []
-    current_outer_r = concrete_core_outer_radius_mm
-    if concrete_core_outer_radius_mm <= 1e-9: 
-        current_outer_r = 0.0 
-
-    # Создаем кольца с заданными толщинами
-    for i in range(num_rings):
-        ring_num = i + 1
-        outer_r = current_outer_r
-        inner_r = 0.0
-        actual_t = 0.0
-        area = 0.0
+def discretize_concrete_core_into_rings(diameter, thickness, thermal_data, fire_exposure_time_sec, num_rings=7, ring_thicknesses=None):
+    if not thermal_data:
+        return []
         
-        if current_outer_r > 1e-9:
-            target_t = ring_thicknesses[i]
-            if target_t is None:  # Для последнего кольца берем оставшуюся толщину
-                actual_t = current_outer_r
-            else:
-                actual_t = min(target_t, current_outer_r)
-            inner_r = current_outer_r - actual_t
-            if outer_r > inner_r: 
-                area = math.pi * (outer_r**2 - inner_r**2)
-                
-        rings_details.append({
-            'ring_number': ring_num,
-            'outer_radius_mm': outer_r,
-            'inner_radius_mm': inner_r,
-            'thickness_mm': actual_t,
-            'area_mm2': area,
-            'temperature_celsius': None 
-        })
-        current_outer_r = inner_r
-
-    thermal_record = None
-    if thermal_data_list:
-        suitable_records = [r for r in thermal_data_list if isinstance(r.get('time_minutes'), (int, float)) and r.get('time_minutes', -1) <= fire_exposure_time_sec]
-        print(f"--- Utils Debug: Found {len(suitable_records)} suitable records with time <= {fire_exposure_time_sec} сек ---")
-        if suitable_records:
-            thermal_record = max(suitable_records, key=lambda x: x.get('time_minutes', -1))
-            print(f"--- Utils Debug: Selected record by MAX time: {thermal_record.get('time_minutes')} сек ---")
-        else:
-            all_time_records = [r for r in thermal_data_list if isinstance(r.get('time_minutes'), (int, float))]
-            if all_time_records:
-                 thermal_record = min(all_time_records, key=lambda x: x.get('time_minutes', float('inf'))) 
-                 print(f"--- Utils Debug: No records <= time, selected record by MIN time: {thermal_record.get('time_minutes')} сек ---")
-            else:
-                print("--- Utils Debug: No records with valid time_minutes found in thermal_data_list. ---")
-    
-    if thermal_record:
-        print(f"--- Utils Debug: Using thermal data for time {thermal_record.get('time_minutes')} сек. Record content: {thermal_record} ---")
-        temps_keys_for_rings = [f'temp_t{i}' for i in range(2, 7)]  # Изменено на 5 колец
-        for i in range(len(rings_details)):
-            if i < len(temps_keys_for_rings):
-                temp_key = temps_keys_for_rings[i]
-                temp_value = thermal_record.get(temp_key)
-                print(f"--- Utils Debug: Ring {i+1}, temp_key '{temp_key}', value from record: {temp_value} (type: {type(temp_value)}) ---")
-                if isinstance(temp_value, (int, float)):
-                    rings_details[i]['temperature_celsius'] = float(temp_value)
-                else:
-                    rings_details[i]['temperature_celsius'] = None
-            else:
-                break 
+    # Находим подходящую запись температурных данных
+    suitable_records = [r for r in thermal_data if isinstance(r.get('time_minutes'), (int, float)) and r.get('time_minutes', -1) <= fire_exposure_time_sec]
+    if suitable_records:
+        thermal_record = max(suitable_records, key=lambda x: x.get('time_minutes', -1))
     else:
-        print(f"--- Utils Debug: No suitable thermal data found in JSON for time {fire_exposure_time_sec} сек. Temperatures will be None. ---")
-
-    return rings_details
+        all_time_records = [r for r in thermal_data if isinstance(r.get('time_minutes'), (int, float))]
+        if all_time_records:
+            thermal_record = min(all_time_records, key=lambda x: x.get('time_minutes', float('inf')))
+        else:
+            thermal_record = None
+            
+    # Радиусы
+    column_radius_mm = diameter / 2.0
+    concrete_core_outer_radius_mm = column_radius_mm - thickness
+    
+    # Если толщины не заданы, делим равномерно
+    if ring_thicknesses is None:
+        total_thickness = concrete_core_outer_radius_mm
+        ring_thicknesses = [total_thickness / num_rings] * num_rings
+    
+    rings = []
+    current_outer_radius = concrete_core_outer_radius_mm
+    
+    for i in range(num_rings):
+        # Определяем толщину текущего кольца
+        if i < len(ring_thicknesses) and ring_thicknesses[i] is not None:
+            thickness_mm = ring_thicknesses[i]
+        else:
+            # Если толщина не задана, используем оставшееся пространство
+            thickness_mm = current_outer_radius
+            
+        # Вычисляем внутренний радиус
+        inner_radius = max(0.0, current_outer_radius - thickness_mm)
+        
+        # Вычисляем площадь кольца
+        area = math.pi * (current_outer_radius**2 - inner_radius**2) if current_outer_radius > inner_radius else 0.0
+        
+        # Определяем температуру для кольца
+        temp = None
+        if thermal_record:
+            if i == 0:  # Б1
+                temp = thermal_record.get('temp_t2')
+            elif i == 1:  # Б2
+                temp = thermal_record.get('temp_t3')
+            elif i == 2:  # Б3
+                temp = thermal_record.get('temp_t5')
+            elif i == 3:  # Б4
+                temp = thermal_record.get('temp_t6')
+            elif i == 4:  # Б5
+                temp = thermal_record.get('temp_t7')
+            elif i == 5:  # Б6
+                temp = thermal_record.get('temp_t8')
+            elif i == 6:  # Б7
+                temp = thermal_record.get('temp_t9')
+        
+        rings.append({
+            'outer_radius_mm': current_outer_radius,
+            'inner_radius_mm': inner_radius,
+            'area_mm2': area,
+            'temperature_celsius': temp
+        })
+        
+        # Обновляем внешний радиус для следующего кольца
+        current_outer_radius = inner_radius
+        
+    return rings
 
 def steel_ring_area(diameter_mm, thickness_mm):
     R_out = diameter_mm / 2
@@ -164,3 +151,48 @@ def concrete_strain_by_temp(temp_c):
                 return None
             return e0 + (e1 - e0) * (temp_c - t0) / (t1 - t0)
     return None 
+
+def calculate_steel_ring(diameter, thickness, thermal_data, fire_exposure_time_sec, rebar_diameter):
+    if not thermal_data:
+        return None
+        
+    # Находим подходящую запись температурных данных
+    suitable_records = [r for r in thermal_data if isinstance(r.get('time_minutes'), (int, float)) and r.get('time_minutes', -1) <= fire_exposure_time_sec]
+    if suitable_records:
+        thermal_record = max(suitable_records, key=lambda x: x.get('time_minutes', -1))
+    else:
+        all_time_records = [r for r in thermal_data if isinstance(r.get('time_minutes'), (int, float))]
+        if all_time_records:
+            thermal_record = min(all_time_records, key=lambda x: x.get('time_minutes', float('inf')))
+        else:
+            thermal_record = None
+            
+    # Радиусы
+    column_radius_mm = diameter / 2.0
+    steel_ring_outer_radius_mm = column_radius_mm
+    steel_ring_inner_radius_mm = column_radius_mm - thickness
+    
+    # Площадь кольца
+    area = math.pi * (steel_ring_outer_radius_mm**2 - steel_ring_inner_radius_mm**2)
+    
+    # Момент инерции кольца
+    I_ring = (math.pi / 4) * (steel_ring_outer_radius_mm**4 - steel_ring_inner_radius_mm**4)
+    
+    # Момент инерции арматуры (формула из Excel)
+    rebar_distance_mm = 210  # расстояние от центра до арматуры
+    sin_45 = math.sin(math.radians(45))
+    I_rebar = (2 * (math.pi * rebar_diameter * rebar_diameter / 4) * (rebar_distance_mm**2 + (rebar_distance_mm * sin_45)**2 + (rebar_distance_mm * sin_45)**2)) * 1e-12
+    
+    # Общий момент инерции
+    I_total = I_ring + I_rebar
+    
+    # Определяем температуру
+    temp = thermal_record.get('temp_t1') if thermal_record else None
+    
+    return {
+        'outer_radius_mm': steel_ring_outer_radius_mm,
+        'inner_radius_mm': steel_ring_inner_radius_mm,
+        'area_mm2': area,
+        'moment_of_inertia_mm4': I_total,
+        'temperature_celsius': temp
+    } 

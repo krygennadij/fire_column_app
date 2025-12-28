@@ -3,4 +3,5 @@ matplotlib
 sqlalchemy
 python-dotenv
 pandas
-openpyxl 
+openpyxl
+plotly 
