@@ -15,75 +15,143 @@ PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from app.utils import calc_section, calc_capacity, discretize_concrete_core_into_rings, steel_ring_area, steel_working_condition_coeff, concrete_working_condition_coeff, concrete_strain_by_temp, calculate_steel_ring
+from app.utils import (
+    calc_section, calc_capacity, discretize_concrete_core_into_rings,
+    steel_ring_area, steel_working_condition_coeff,
+    concrete_working_condition_coeff, concrete_strain_by_temp,
+    calculate_steel_ring
+)
+from app.config import (
+    GEOMETRY_LIMITS, MATERIAL_CONSTANTS, CALCULATION_CONFIG, DEFAULT_VALUES
+)
+from app.validation import validate_all_inputs
+from app.calculations import (
+    calculate_final_capacity, calculate_capacity_for_time,
+    calculate_stiffness_for_time, get_reduction_coeff
+)
 
-def get_reduction_coeff(slenderness):
-    table = [
-        (0.0, 1.0),
-        (0.2, 1.0),
-        (0.4, 0.9),
-        (0.6, 0.785),
-        (0.8, 0.6),
-        (1.0, 0.54),
-        (1.2, 0.43),
-        (1.4, 0.36),
-        (1.6, 0.285),
-        (1.8, 0.24),
-        (2.0, 0.2),
-        (2.2, 0.17),
-        (2.4, 0.15),
-        (2.6, 0.125),
-        (2.8, 0.11),
-        (3.0, 0.1),
-    ]
-    if slenderness <= table[0][0]:
-        return table[0][1]
-    if slenderness >= table[-1][0]:
-        return table[-1][1]
-    for i in range(1, len(table)):
-        x0, y0 = table[i-1]
-        x1, y1 = table[i]
-        if x0 <= slenderness <= x1:
-            return y0 + (y1 - y0) * (slenderness - x0) / (x1 - x0)
-    return table[-1][1]
+# Функция get_reduction_coeff перенесена в calculations.py
 
 st.set_page_config(page_title="Расчёт огнестойкости сталетрубобетонной колонны", page_icon="🔥", layout="wide")
 st.markdown('<div style="text-align:center; font-size:2em; font-weight:700; font-family:Segoe UI, Arial, sans-serif; margin-bottom:0.7em; margin-top:0.2em;">🔥 Расчёт огнестойкости сталетрубобетонной колонны</div>', unsafe_allow_html=True)
 
 with st.sidebar:
     st.header("⚙️ Ввод данных")
-    
+
     with st.expander("📏 Геометрия", expanded=True):
-        diameter = st.number_input("Наружный диаметр, мм", min_value=200.0, max_value=1200.0, value=355.6, step=0.1)
-        thickness = st.number_input("Толщина стенки, мм", min_value=3.0, max_value=30.0, value=9.5, step=0.1)
-        height = st.number_input("Высота колонны, м", min_value=0.5, max_value=30.0, value=2.5, step=0.1)
-        effective_length_coefficient = st.number_input("Коэфф. расч. длины", min_value=0.1, max_value=5.0, value=0.7, step=0.1)
+        diameter = st.number_input(
+            "Наружный диаметр, мм",
+            min_value=GEOMETRY_LIMITS.MIN_DIAMETER_MM,
+            max_value=GEOMETRY_LIMITS.MAX_DIAMETER_MM,
+            value=DEFAULT_VALUES.DIAMETER_MM,
+            step=0.1
+        )
+        thickness = st.number_input(
+            "Толщина стенки, мм",
+            min_value=GEOMETRY_LIMITS.MIN_THICKNESS_MM,
+            max_value=GEOMETRY_LIMITS.MAX_THICKNESS_MM,
+            value=DEFAULT_VALUES.THICKNESS_MM,
+            step=0.1
+        )
+        height = st.number_input(
+            "Высота колонны, м",
+            min_value=GEOMETRY_LIMITS.MIN_HEIGHT_M,
+            max_value=GEOMETRY_LIMITS.MAX_HEIGHT_M,
+            value=DEFAULT_VALUES.HEIGHT_M,
+            step=0.1
+        )
+        effective_length_coefficient = st.number_input(
+            "Коэфф. расч. длины",
+            min_value=0.1,
+            max_value=5.0,
+            value=DEFAULT_VALUES.EFFECTIVE_LENGTH_COEFF,
+            step=0.1
+        )
 
     with st.expander("🧱 Материалы", expanded=True):
-        steel_strength_normative = st.number_input("Ryn стали, МПа", min_value=200, max_value=1000, value=355)
-        steel_elastic_modulus = st.number_input("E стали, МПа", min_value=150000, max_value=250000, value=210000)
-        concrete_strength_normative = st.number_input("Rbn бетона, МПа", min_value=5.0, max_value=120.0, value=42.0, step=0.1)
+        steel_strength_normative = st.number_input(
+            "Ryn стали, МПа",
+            min_value=200,
+            max_value=1000,
+            value=DEFAULT_VALUES.STEEL_STRENGTH_MPA
+        )
+        steel_elastic_modulus = st.number_input(
+            "E стали, МПа",
+            min_value=150000,
+            max_value=250000,
+            value=DEFAULT_VALUES.STEEL_ELASTIC_MODULUS_MPA
+        )
+        concrete_strength_normative = st.number_input(
+            "Rbn бетона, МПа",
+            min_value=5.0,
+            max_value=120.0,
+            value=DEFAULT_VALUES.CONCRETE_STRENGTH_MPA,
+            step=0.1
+        )
 
     with st.expander("🔥 Нагрузка и Огонь", expanded=True):
-        normative_load = st.number_input("Нагрузка, кН", min_value=0.0, max_value=50000.0, value=900.0, step=10.0)
-        fire_exposure_time = st.number_input("Время пожара, мин", min_value=0, max_value=360, value=0, step=5)
-    
+        normative_load = st.number_input(
+            "Нагрузка, кН",
+            min_value=0.0,
+            max_value=50000.0,
+            value=DEFAULT_VALUES.NORMATIVE_LOAD_KN,
+            step=10.0
+        )
+        fire_exposure_time = st.number_input(
+            "Время пожара, мин",
+            min_value=0,
+            max_value=360,
+            value=DEFAULT_VALUES.FIRE_EXPOSURE_TIME_MIN,
+            step=5
+        )
+
     with st.expander("🏗️ Армирование"):
         use_reinforcement = st.checkbox("Учитывать армирование", value=True)
-        rebar_count = st.number_input("Кол-во стержней", min_value=0, max_value=40, value=8, step=1)
-        rebar_diameter = st.number_input("Диаметр стержня, мм", min_value=4, max_value=60, value=10, step=1)
+        rebar_count = st.number_input(
+            "Кол-во стержней",
+            min_value=0,
+            max_value=40,
+            value=MATERIAL_CONSTANTS.DEFAULT_REBAR_COUNT,
+            step=1
+        )
+        rebar_diameter = st.number_input(
+            "Диаметр стержня, мм",
+            min_value=4,
+            max_value=60,
+            value=MATERIAL_CONSTANTS.DEFAULT_REBAR_DIAMETER_MM,
+            step=1
+        )
 
+# === ВАЛИДАЦИЯ ВХОДНЫХ ДАННЫХ ===
+is_valid, error_message = validate_all_inputs(
+    diameter, thickness, height,
+    steel_strength_normative, steel_elastic_modulus, concrete_strength_normative,
+    normative_load, fire_exposure_time,
+    use_reinforcement, rebar_count, rebar_diameter
+)
+
+if not is_valid:
+    st.error(error_message)
+    st.stop()  # Останавливаем выполнение при некорректных данных
+
+@st.cache_data(show_spinner="Загрузка температурных данных...")
 def load_thermal_data():
+    """
+    Загрузка температурных данных из JSON файлов с кэшированием.
+
+    Returns:
+        Словарь {(диаметр, толщина): данные}
+    """
     thermal_dir = Path(PROJECT_ROOT) / "thermal_data"
     if not thermal_dir.exists():
-        st.error(f"Директория {thermal_dir} не найдена!")
+        st.error(f"❌ Директория {thermal_dir} не найдена!")
         return {}
-        
+
     thermal_files = list(thermal_dir.glob("*.json"))
     if not thermal_files:
-        st.error(f"JSON файлы не найдены в директории {thermal_dir}!")
+        st.error(f"❌ JSON файлы не найдены в директории {thermal_dir}!")
         return {}
-    
+
     thermal_data = {}
     for file in thermal_files:
         try:
@@ -92,7 +160,7 @@ def load_thermal_data():
             name = file.stem
             # Нормализация: замена кириллического 'х' на латинский 'x'
             name_clean = name.replace('х', 'x').replace('Х', 'x')
-            
+
             try:
                 if 'x' in name_clean:
                     parts = name_clean.split('x')
@@ -100,19 +168,19 @@ def load_thermal_data():
                     parts = name_clean.split(',')
                 else:
                     parts = [name_clean]
-                
+
                 if len(parts) >= 2:
-                    diameter = float(parts[0].replace(',', '.'))
-                    thickness = float(parts[1].replace(',', '.'))
-                    thermal_data[(diameter, thickness)] = data
+                    diameter_val = float(parts[0].replace(',', '.'))
+                    thickness_val = float(parts[1].replace(',', '.'))
+                    thermal_data[(diameter_val, thickness_val)] = data
                 else:
-                    st.warning(f"Не удалось определить диаметр и толщину из имени файла: {file.name}")
+                    st.warning(f"⚠️ Не удалось определить диаметр и толщину из имени файла: {file.name}")
             except ValueError:
-                st.warning(f"Ошибка при разборе имени файла: {file.name}")
+                st.warning(f"⚠️ Ошибка при разборе имени файла: {file.name}")
                 continue
         except Exception as e:
-            st.error(f"Ошибка при загрузке файла {file.name}: {str(e)}")
-            
+            st.error(f"❌ Ошибка при загрузке файла {file.name}: {str(e)}")
+
     return thermal_data
 
 def get_closest_thermal_data(thermal_data, diameter, thickness):
