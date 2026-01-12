@@ -426,9 +426,12 @@ if closest_data:
         reduction_coeff = get_reduction_coeff(slenderness)
         N_final = N_total * reduction_coeff
         N_final_list.append(N_final)
-    # График
 
-
+    # Коэффициент запаса прочности n = N_final / normative_load
+    if normative_load > 0:
+        n_safety_list = [N / normative_load for N in N_final_list]
+    else:
+        n_safety_list = [0] * len(N_final_list)
 
 # --- Формирование table_data_list с едиными ключами ---
 table_data_list = []
@@ -644,9 +647,10 @@ with col_m4:
 
 st.divider()
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "🧮 Детальный расчёт",
     "📈 График (N)",
+    "📊 Запас прочности",
     "🌡️ График (T)",
     "📐 Сечение",
     "ℹ️ О проекте"
@@ -1115,6 +1119,75 @@ with tab2:
         st.pyplot(fig)
 
 with tab3:
+    st.markdown('<div style="text-align:center; font-size:1.25em; font-weight:700; font-family:Segoe UI, Arial, sans-serif; margin-bottom:0.5em;">Коэффициент запаса прочности</div>', unsafe_allow_html=True)
+
+    if closest_data and N_final_list and normative_load > 0 and 'n_safety_list' in dir():
+        # DataFrame для графика
+        df_safety = pd.DataFrame({
+            'Время, мин': times,
+            'Коэффициент запаса n': n_safety_list
+        })
+
+        # Найти предел огнестойкости (когда n = 1)
+        fire_resistance_limit_n = None
+        for i in range(1, len(n_safety_list)):
+            if n_safety_list[i-1] >= 1 and n_safety_list[i] < 1:
+                # Линейная интерполяция
+                t0, t1 = times[i-1], times[i]
+                n0, n1 = n_safety_list[i-1], n_safety_list[i]
+                if n1 != n0:
+                    fire_resistance_limit_n = t0 + (1 - n0) * (t1 - t0) / (n1 - n0)
+                break
+
+        # Основная линия графика
+        line = alt.Chart(df_safety).mark_line(
+            point=True, color="#1f77b4", strokeWidth=3
+        ).encode(
+            x=alt.X('Время, мин:Q', title='Время, мин'),
+            y=alt.Y('Коэффициент запаса n:Q', title='Коэффициент запаса прочности n')
+        )
+
+        # Горизонтальная линия n = 1
+        rule_data = pd.DataFrame({'y': [1]})
+        rule = alt.Chart(rule_data).mark_rule(
+            color='red', strokeDash=[5, 5], strokeWidth=2
+        ).encode(y='y:Q')
+
+        # Текст "n = 1"
+        text_n1 = alt.Chart(pd.DataFrame({
+            'x': [max(times) * 0.9],
+            'y': [1.05],
+            'text': ['n = 1']
+        })).mark_text(
+            color='red', fontSize=12, fontWeight='bold'
+        ).encode(x='x:Q', y='y:Q', text='text:N')
+
+        chart = (line + rule + text_n1).properties(height=400)
+
+        # Вертикальная линия предела огнестойкости
+        if fire_resistance_limit_n is not None:
+            vline_data = pd.DataFrame({'x': [fire_resistance_limit_n]})
+            vline = alt.Chart(vline_data).mark_rule(
+                color='green', strokeDash=[3, 3], strokeWidth=2
+            ).encode(x='x:Q')
+            chart = chart + vline
+
+        st.altair_chart(chart, use_container_width=True)
+
+        # Информационный блок
+        col1, col2 = st.columns(2)
+        with col1:
+            if fire_resistance_limit_n is not None:
+                st.metric("Предел огнестойкости", f"{fire_resistance_limit_n:.1f} мин")
+            else:
+                st.info("Предел огнестойкости не достигнут в расчётном диапазоне")
+        with col2:
+            if n_safety_list:
+                st.metric("Начальный запас прочности", f"{n_safety_list[0]:.2f}")
+    else:
+        st.warning("Недостаточно данных для построения графика. Убедитесь, что нагрузка > 0.")
+
+with tab4:
     st.markdown('<div style="text-align:center; font-size:1.25em; font-weight:700; font-family:Segoe UI, Arial, sans-serif; margin-bottom:0.5em;">График нагрева сечения</div>', unsafe_allow_html=True)
     
     if closest_data:
@@ -1176,7 +1249,7 @@ with tab3:
     else:
          st.info("Нет данных для отображения графика прогрева.")
 
-with tab4:
+with tab5:
     st.markdown('<div style="text-align:center; font-size:1.25em; font-weight:700; font-family:Segoe UI, Arial, sans-serif; margin-bottom:0.5em;">Сечение колонны</div>', unsafe_allow_html=True)
     
     # Параметры круга
@@ -1647,7 +1720,7 @@ with tab4:
     
     st.markdown(legend_html, unsafe_allow_html=True)
 
-with tab5:
+with tab6:
     st.markdown("""
     ### О проекте
     - Современный расчёт огнестойкости трубобетонных колонн
