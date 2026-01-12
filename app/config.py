@@ -62,6 +62,7 @@ class DefaultValues:
     STEEL_STRENGTH_MPA: int = 355
     STEEL_ELASTIC_MODULUS_MPA: int = 210000
     CONCRETE_STRENGTH_MPA: float = 42.0
+    REBAR_STRENGTH_MPA: int = 355  # Нормативное сопротивление арматуры, МПа
 
     NORMATIVE_LOAD_KN: float = 900.0
     FIRE_EXPOSURE_TIME_MIN: int = 0

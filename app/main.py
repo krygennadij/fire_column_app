@@ -121,6 +121,13 @@ with st.sidebar:
             value=MATERIAL_CONSTANTS.DEFAULT_REBAR_DIAMETER_MM,
             step=1
         )
+        rebar_strength_normative = st.number_input(
+            "Ryn арматуры, МПа",
+            min_value=200,
+            max_value=1000,
+            value=DEFAULT_VALUES.REBAR_STRENGTH_MPA,
+            help="Нормативное сопротивление стали арматуры. По умолчанию равно сопротивлению стали оболочки."
+        )
 
 # === ВАЛИДАЦИЯ ВХОДНЫХ ДАННЫХ ===
 is_valid, error_message = validate_all_inputs(
@@ -307,7 +314,7 @@ if use_reinforcement:
     if temp_rebar is not None and isinstance(temp_rebar, (int, float)):
         rebar_area = (math.pi * rebar_diameter**2 / 4) * rebar_count  # мм²
         gamma_st_rebar = steel_working_condition_coeff(temp_rebar)
-        f_yd_rebar = gamma_st_rebar * steel_strength_normative
+        f_yd_rebar = gamma_st_rebar * rebar_strength_normative
         N_rebar = rebar_area / 1e6 * f_yd_rebar * 1e3
         N_total += N_rebar
 
@@ -394,7 +401,7 @@ if closest_data:
             temp_rebar = thermal_record.get('temp_t4') if thermal_record else None
             if temp_rebar is not None:
                  gamma_st_rebar = steel_working_condition_coeff(temp_rebar)
-                 f_yd_rebar = gamma_st_rebar * steel_strength_normative
+                 f_yd_rebar = gamma_st_rebar * rebar_strength_normative
                  E_rebar_fire = steel_elastic_modulus * gamma_st_rebar
                  
                  # Несущая способность арматуры
@@ -517,7 +524,7 @@ s_I_rebar_m4 = (8 * s_I_self_bar + 4 * s_rebar_area_one * rebar_distance_mm**2) 
 if s_temp_rebar is not None and isinstance(s_temp_rebar, (int, float)):
     s_gamma_st_rebar = steel_working_condition_coeff(s_temp_rebar)
     if s_gamma_st_rebar is not None:
-        s_f_yd_rebar_mpa = s_gamma_st_rebar * steel_strength_normative
+        s_f_yd_rebar_mpa = s_gamma_st_rebar * rebar_strength_normative
         s_E_rebar_fire_mpa = steel_elastic_modulus * s_gamma_st_rebar
 if s_rebar_area_mm2 is not None and s_f_yd_rebar_mpa is not None:
     s_N_rebar_kn = (s_rebar_area_mm2 / 1e6) * s_f_yd_rebar_mpa * 1e3

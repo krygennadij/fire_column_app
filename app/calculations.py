@@ -174,7 +174,8 @@ def calculate_capacity_for_time(
     rebar_diameter_mm: int = 10,
     rebar_count: int = 8,
     num_rings: int = 7,
-    ring_thicknesses: Optional[List[Optional[float]]] = None
+    ring_thicknesses: Optional[List[Optional[float]]] = None,
+    rebar_strength_mpa: Optional[float] = None
 ) -> float:
     """
     Расчёт несущей способности (без учёта гибкости) для заданного времени.
@@ -184,17 +185,21 @@ def calculate_capacity_for_time(
         thickness_mm: Толщина стенки в мм
         thermal_data: Температурные данные
         fire_exposure_time_sec: Время пожара в секундах
-        steel_strength_mpa: Прочность стали в МПа
+        steel_strength_mpa: Прочность стали оболочки в МПа
         concrete_strength_mpa: Прочность бетона в МПа
         use_reinforcement: Учитывать ли армирование
         rebar_diameter_mm: Диаметр арматуры в мм
         rebar_count: Количество стержней
         num_rings: Количество бетонных колец
         ring_thicknesses: Толщины колец
+        rebar_strength_mpa: Прочность стали арматуры в МПа (если None, используется steel_strength_mpa)
 
     Returns:
         Несущая способность в кН (без учёта гибкости)
     """
+    # Если прочность арматуры не задана, используем прочность стали оболочки
+    if rebar_strength_mpa is None:
+        rebar_strength_mpa = steel_strength_mpa
     N_total = 0.0
 
     # Получаем запись температурных данных
@@ -231,7 +236,7 @@ def calculate_capacity_for_time(
         if temp_rebar is not None and isinstance(temp_rebar, (int, float)):
             rebar_area = (math.pi * rebar_diameter_mm**2 / 4) * rebar_count  # мм²
             gamma_st_rebar = steel_working_condition_coeff(temp_rebar)
-            f_yd_rebar = gamma_st_rebar * steel_strength_mpa
+            f_yd_rebar = gamma_st_rebar * rebar_strength_mpa
             N_rebar = rebar_area / 1e6 * f_yd_rebar * 1e3  # кН
             N_total += N_rebar
 
@@ -252,10 +257,14 @@ def calculate_final_capacity(
     rebar_diameter_mm: int = 10,
     rebar_count: int = 8,
     num_rings: int = 7,
-    ring_thicknesses: Optional[List[Optional[float]]] = None
+    ring_thicknesses: Optional[List[Optional[float]]] = None,
+    rebar_strength_mpa: Optional[float] = None
 ) -> Tuple[float, float, float, float]:
     """
     Полный расчёт несущей способности с учётом гибкости.
+
+    Args:
+        rebar_strength_mpa: Прочность стали арматуры в МПа (если None, используется steel_strength_mpa)
 
     Returns:
         Кортеж (N_final, N_total, N_cr, slenderness, reduction_coeff):
@@ -278,7 +287,7 @@ def calculate_final_capacity(
         diameter_mm, thickness_mm, thermal_data, fire_exposure_time_sec,
         steel_strength_mpa, concrete_strength_mpa,
         use_reinforcement, rebar_diameter_mm, rebar_count,
-        num_rings, ring_thicknesses
+        num_rings, ring_thicknesses, rebar_strength_mpa
     )
 
     # Расчёт критической силы
