@@ -1153,16 +1153,7 @@ with tab3:
             color='red', strokeDash=[5, 5], strokeWidth=2
         ).encode(y='y:Q')
 
-        # Текст "n = 1"
-        text_n1 = alt.Chart(pd.DataFrame({
-            'x': [max(times) * 0.9],
-            'y': [1.05],
-            'text': ['n = 1']
-        })).mark_text(
-            color='red', fontSize=12, fontWeight='bold'
-        ).encode(x='x:Q', y='y:Q', text='text:N')
-
-        chart = (line + rule + text_n1).properties(height=400)
+        chart = (line + rule).properties(height=400)
 
         # Вертикальная линия предела огнестойкости
         if fire_resistance_limit_n is not None:
