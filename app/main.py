@@ -641,9 +641,9 @@ with col_m3:
 with col_m4:
     if N_final_for_summary_table and N_final_for_summary_table > 0:
         util = normative_load / N_final_for_summary_table
-        st.metric("Коэфф. использования", f"{util:.2f}")
+        st.metric("Коэффициент надежности", f"{util:.2f}")
     else:
-        st.metric("Коэфф. использования", "N/A")
+        st.metric("Коэффициент надежности", "N/A")
 
 st.divider()
 
