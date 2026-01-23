@@ -3,6 +3,20 @@ import json
 import os
 from pathlib import Path
 
+def parse_geometry_from_filename(file_stem: str):
+    name_clean = file_stem.replace('\u0445', 'x').replace('\u0425', 'x')
+    parts = name_clean.split('x') if 'x' in name_clean else name_clean.split(',')
+    if len(parts) < 2:
+        return None
+    try:
+        diameter_val = float(parts[0].replace(',', '.'))
+        thickness_val = float(parts[1].replace(',', '.'))
+        rebar_val = float(parts[2].replace(',', '.')) if len(parts) >= 3 else None
+        return diameter_val, thickness_val, rebar_val
+    except ValueError:
+        return None
+
+
 def convert_excel_to_json(excel_file):
     try:
         # Читаем Excel файл
@@ -88,6 +102,15 @@ def main():
                 print(f"\nОбработка файла: {excel_file}")
                 # Получаем имя файла без расширения
                 file_name = excel_file.stem
+                geometry = parse_geometry_from_filename(file_name)
+                if geometry is None:
+                    print(f"Warning: could not parse geometry from filename {excel_file.name}")
+                else:
+                    diameter_val, thickness_val, rebar_val = geometry
+                    if rebar_val is None:
+                        print(f"Geometry: D={diameter_val} mm, t={thickness_val} mm")
+                    else:
+                        print(f"Geometry: D={diameter_val} mm, t={thickness_val} mm, d_arm={rebar_val} mm")
                 
                 # Конвертируем Excel в JSON
                 data = convert_excel_to_json(excel_file)

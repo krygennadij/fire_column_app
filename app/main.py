@@ -141,13 +141,26 @@ if not is_valid:
     st.error(error_message)
     st.stop()  # Останавливаем выполнение при некорректных данных
 
+def parse_thermal_filename(name: str):
+    name_clean = name.replace('\u0445', 'x').replace('\u0425', 'x')
+    parts = name_clean.split('x') if 'x' in name_clean else name_clean.split(',')
+    if len(parts) < 2:
+        return None
+    try:
+        diameter_val = float(parts[0].replace(',', '.'))
+        thickness_val = float(parts[1].replace(',', '.'))
+        rebar_val = float(parts[2].replace(',', '.')) if len(parts) >= 3 else None
+        return diameter_val, thickness_val, rebar_val
+    except ValueError:
+        return None
+
 @st.cache_data(show_spinner="Загрузка температурных данных...")
 def load_thermal_data():
     """
     Загрузка температурных данных из JSON файлов с кэшированием.
 
     Returns:
-        Словарь {(диаметр, толщина): данные}
+        Словарь {(диаметр, толщина, диаметр арматуры): данные}
     """
     thermal_dir = Path(PROJECT_ROOT) / "thermal_data"
     if not thermal_dir.exists():
@@ -165,52 +178,69 @@ def load_thermal_data():
             with open(file, 'r', encoding='utf-8') as f:
                 data = json.load(f)
             name = file.stem
-            # Нормализация: замена кириллического 'х' на латинский 'x'
-            name_clean = name.replace('х', 'x').replace('Х', 'x')
-
-            try:
-                if 'x' in name_clean:
-                    parts = name_clean.split('x')
-                elif ',' in name_clean:
-                    parts = name_clean.split(',')
-                else:
-                    parts = [name_clean]
-
-                if len(parts) >= 2:
-                    diameter_val = float(parts[0].replace(',', '.'))
-                    thickness_val = float(parts[1].replace(',', '.'))
-                    thermal_data[(diameter_val, thickness_val)] = data
-                else:
-                    st.warning(f"⚠️ Не удалось определить диаметр и толщину из имени файла: {file.name}")
-            except ValueError:
-                st.warning(f"⚠️ Ошибка при разборе имени файла: {file.name}")
+            geometry = parse_thermal_filename(name)
+            if geometry is None:
+                st.warning(f"Не удалось разобрать имя файла: {file.name}")
                 continue
+            diameter_val, thickness_val, rebar_val = geometry
+            thermal_data[(diameter_val, thickness_val, rebar_val)] = data
         except Exception as e:
             st.error(f"❌ Ошибка при загрузке файла {file.name}: {str(e)}")
 
     return thermal_data
 
-def get_closest_thermal_data(thermal_data, diameter, thickness):
+def get_closest_thermal_data(thermal_data, diameter, thickness, rebar_diameter=None):
     if not thermal_data:
         st.error("Нет доступных температурных данных!")
         return None
-        
-    available_diameters = sorted(set(d for d, _ in thermal_data.keys()))
-    available_thicknesses = sorted(set(t for _, t in thermal_data.keys()))
-    
-    if not available_diameters or not available_thicknesses:
+
+    key_data = []
+    for key, data in thermal_data.items():
+        if len(key) == 2:
+            diameter_val, thickness_val = key
+            rebar_val = None
+        else:
+            diameter_val, thickness_val, rebar_val = key
+        key_data.append((diameter_val, thickness_val, rebar_val, data))
+
+    has_rebar_data = any(k[2] is not None for k in key_data)
+    if has_rebar_data:
+        candidates = [k for k in key_data if k[2] is not None]
+    else:
+        candidates = key_data
+    if not candidates:
         st.error("Нет доступных размеров в температурных данных!")
         return None
-    
-    closest_diameter = min(available_diameters, key=lambda d: abs(d - diameter))
-    closest_thickness = min(available_thicknesses, key=lambda t: abs(t - thickness))
-    
-    st.info(f"Температурные данные приняты для диаметра {closest_diameter} мм и толщины {closest_thickness} мм")
-    
-    return thermal_data.get((closest_diameter, closest_thickness), None)
+
+    def distance(item):
+        d_val, t_val, r_val, _ = item
+        dist = (d_val - diameter) ** 2 + (t_val - thickness) ** 2
+        if has_rebar_data and r_val is not None and rebar_diameter is not None:
+            dist += (r_val - rebar_diameter) ** 2
+        return dist
+
+    closest_diameter, closest_thickness, closest_rebar, closest_data = min(candidates, key=distance)
+
+    if has_rebar_data and closest_rebar is not None and rebar_diameter is not None:
+        st.info(
+            f"Температурные данные приняты для диаметра {closest_diameter} мм, "
+            f"толщины {closest_thickness} мм и диаметра арматуры {closest_rebar} мм"
+        )
+    else:
+        st.info(
+            f"Температурные данные приняты для диаметра {closest_diameter} мм "
+            f"и толщины {closest_thickness} мм"
+        )
+
+    return closest_data
 
 thermal_data = load_thermal_data()
-closest_data = get_closest_thermal_data(thermal_data, diameter, thickness)
+closest_data = get_closest_thermal_data(
+    thermal_data,
+    diameter,
+    thickness,
+    rebar_diameter
+)
 
 if closest_data:
     st.toast(f"Загружены данные для диаметра {diameter} мм и толщины {thickness} мм", icon="✅")
