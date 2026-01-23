@@ -434,6 +434,16 @@ if closest_data:
         n_safety_list = [0] * len(N_final_list)
 
 # --- Формирование table_data_list с едиными ключами ---
+def fmt_sci_html(val):
+    if val is None:
+        return "N/A"
+    s = f"{val:.2e}"
+    if "e" in s:
+        base, exponent = s.split("e")
+        # Use simple dot character for compatibility
+        return f"{base} · 10<sup>{int(exponent)}</sup>"
+    return s
+
 table_data_list = []
 # Данные по бетонным кольцам
 if concrete_rings_details:
@@ -470,7 +480,7 @@ if concrete_rings_details:
             "Расчётное сопротивление бетона, R<sub>bu</sub>, МПа": f"{f_cd_fire_mpa_c:.1f}" if f_cd_fire_mpa_c is not None else "N/A",
             "Деформация бетона, ε<sub>yn,t</sub>": f"{strain_c_permille:.2f}" if strain_c_permille is not None else "N/A",
             "Модуль деформации бетона, E<sub>b,t</sub>, МПа": f"{E_c_fire_mpa_c:.0f}" if E_c_fire_mpa_c is not None else "N/A",
-            "Момент инерции, I, м⁴": f"{I_ring_m4_c:.2e}",
+            "Момент инерции, I, м⁴": fmt_sci_html(I_ring_m4_c),
             "Несущая способность кольца, N<sub>p,t</sub>, кН": f"{N_ring_kn_c:.1f}" if N_ring_kn_c is not None else "N/A",
             "Жёсткость кольца, EI, кН·м²": f"{stiffness_ring_knm2_c:.1f}" if stiffness_ring_knm2_c is not None else "N/A",
         })
@@ -543,7 +553,7 @@ table_data_list.append({
     "Коэффициент условий работы стали, γ<sub>st</sub>": f"{s_gamma_st:.3f}" if s_gamma_st is not None else "N/A",
     "Расчётное сопротивление стали, R<sub>su</sub>, МПа": f"{s_f_yd_fire_mpa:.1f}" if s_f_yd_fire_mpa is not None else "N/A",
     "Модуль упругости стали, E<sub>s,t</sub>, МПа": f"{s_E_steel_fire_mpa:.0f}" if s_E_steel_fire_mpa is not None else "N/A",
-    "Момент инерции, I, м⁴": f"{s_I_steel_ring_m4:.2e}",
+    "Момент инерции, I, м⁴": fmt_sci_html(s_I_steel_ring_m4),
     "Несущая способность кольца, N<sub>p,t</sub>, кН": f"{s_N_steel_ring_kn:.1f}" if s_N_steel_ring_kn is not None else "N/A",
     "Жёсткость кольца, EI, кН·м²": f"{s_stiffness_steel_knm2:.1f}" if s_stiffness_steel_knm2 is not None else "N/A",
 })
@@ -559,7 +569,7 @@ if use_reinforcement:
         "Коэффициент условий работы стали, γ<sub>st</sub>": f"{s_gamma_st_rebar:.3f}" if s_gamma_st_rebar is not None else "N/A",
         "Расчётное сопротивление стали, R<sub>su</sub>, МПа": f"{s_f_yd_rebar_mpa:.1f}" if s_f_yd_rebar_mpa is not None else "N/A",
         "Модуль упругости стали, E<sub>s,t</sub>, МПа": f"{s_E_rebar_fire_mpa:.0f}" if s_E_rebar_fire_mpa is not None else "N/A",
-        "Момент инерции, I, м⁴": f"{s_I_rebar_m4:.2e}",
+        "Момент инерции, I, м⁴": fmt_sci_html(s_I_rebar_m4),
         "Несущая способность кольца, N<sub>p,t</sub>, кН": f"{s_N_rebar_kn:.1f}" if s_N_rebar_kn is not None else "N/A",
         "Жёсткость кольца, EI, кН·м²": f"{s_stiffness_rebar_knm2:.1f}" if s_stiffness_rebar_knm2 is not None else "N/A",
     })
@@ -647,10 +657,11 @@ with col_m4:
 
 st.divider()
 
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+tab1, tab2, tab3, tab_walkthrough, tab4, tab5, tab6 = st.tabs([
     "🧮 Детальный расчёт",
     "📈 График (N)",
     "📊 Запас прочности",
+    "📝 Ход решения",
     "🌡️ График (T)",
     "📐 Сечение",
     "ℹ️ О проекте"
@@ -1177,6 +1188,226 @@ with tab3:
                 st.metric("Начальный запас прочности", f"{n_safety_list[0]:.2f}")
     else:
         st.warning("Недостаточно данных для построения графика. Убедитесь, что нагрузка > 0.")
+
+with tab_walkthrough:
+    st.markdown('<div style="text-align:center; font-size:1.25em; font-weight:700; font-family:Segoe UI, Arial, sans-serif; margin-bottom:0.5em;">Подробный ход решения</div>', unsafe_allow_html=True)
+    
+    target_times = [0, 30, 60, 90, 120, 150, 180, 210, 240]
+    
+    for t_min in target_times:
+        with st.expander(f"Время {t_min} мин", expanded=False):
+            t_sec = t_min * 60
+            
+            # 1. Определяем температуры
+            current_record = None
+            if closest_data:
+                # Ищем запись <= текущему времени
+                suitable = [r for r in closest_data if isinstance(r.get('time_minutes'), (int, float)) and r.get('time_minutes') <= t_sec]
+                if suitable:
+                    current_record = max(suitable, key=lambda x: x.get('time_minutes'))
+                else:
+                    # Если время 0 или данных нет, берем самую первую
+                    all_recs = [r for r in closest_data if isinstance(r.get('time_minutes'), (int, float))]
+                    if all_recs:
+                        current_record = min(all_recs, key=lambda x: x.get('time_minutes'))
+            
+            if not current_record:
+                st.warning(f"Нет температурных данных для времени {t_min} мин")
+                continue
+
+            st.markdown(f"**1. Определение температур в сечении для t = {t_min} мин**")
+            st.markdown("Температуры определяются по теплотехническому расчёту (см. вкладку График (T)).")
+            
+            st.markdown(f"**2. Расчёт показателей для каждого элемента сечения**")
+            
+            # --- Расчет колец бетона ---
+            N_calc_total = 0.0
+            total_stiffness_calc = 0.0
+            
+            # Получаем температуры колец
+            temp_list = []
+            if current_record:
+                mapping = {0:'temp_t2', 1:'temp_t3', 2:'temp_t5', 3:'temp_t6', 4:'temp_t7', 5:'temp_t8', 6:'temp_t9'}
+                for i in range(7):
+                    temp_list.append(current_record.get(mapping.get(i)))
+
+            # Helper for scientific notation
+            def fmt_sci(val):
+                s = f"{val:.2e}"
+                if "e" in s:
+                    base, exponent = s.split("e")
+                    return f"{base} \\cdot 10^{{{int(exponent)}}}"
+                return s
+
+            for i in range(7):
+                 # Geometry calc
+                column_r = diameter / 2.0
+                core_outer_r = column_r - thickness
+                n_th = [10.0, 20.0, 20.0, 20.0, 20.0, 20.0, None]
+                if i < 6:
+                    out_r = core_outer_r - sum(x for x in n_th[:i] if x is not None)
+                    in_r_val_calc = max(0.0, out_r - (n_th[i] if n_th[i] else out_r))
+                else:
+                    out_r = core_outer_r - sum(x for x in n_th[:i] if x is not None)
+                    in_r_val_calc = 0.0
+                area_i = math.pi * (out_r**2 - in_r_val_calc**2) if out_r > in_r_val_calc else 0.0
+                
+                t_val = temp_list[i]
+                gamma_bt_val = concrete_working_condition_coeff(t_val) if t_val is not None else 1.0
+                f_cd_val = gamma_bt_val * concrete_strength_normative
+                
+                strain_val = concrete_strain_by_temp(t_val) if t_val is not None else 0
+                E_b_val = f_cd_val / (strain_val * 1e-3) if (strain_val and strain_val > 0) else 0.0
+                
+                N_i = area_i / 1e6 * f_cd_val * 1e3
+                I_i = (math.pi / 4) * (out_r**4 - in_r_val_calc**4) / 1e12
+                EI_i = I_i * E_b_val * 1e3
+                
+                N_calc_total += N_i
+                total_stiffness_calc += EI_i
+                
+                with st.expander(f"Кольцо бетона Б{i+1}"):
+                    st.markdown(rf"Температура: $T_{{b{i+1}}} = {t_val:.1f}^\circ\text{{C}}$")
+                    st.markdown(rf"Коэфф. условий работы: $\gamma_{{bt}}({t_val:.1f}) = {gamma_bt_val:.2f}$")
+                    st.markdown(rf"Сопротивление: $R_{{b,t}} = R_{{bn}} \cdot \gamma_{{bt}} = {concrete_strength_normative} \cdot {gamma_bt_val:.2f} = {f_cd_val:.1f}$ МПа")
+                    if strain_val > 0:
+                         st.markdown(rf"Модуль деформации: $E_{{b,t}} = \frac{{R_{{b,t}}}}{{\varepsilon_{{b,t}}}} = \frac{{{f_cd_val:.1f}}}{{{strain_val/1000:.4f}}} = {E_b_val:.0f}$ МПа")
+                    else:
+                         st.markdown(rf"Модуль деформации: $E_{{b,t}} = 0$ МПа")
+                    
+                    st.markdown(rf"Площадь кольца: $A_{{b{i+1}}} = {area_i/100:.1f} \text{{ см}}^2$")
+                    st.markdown(rf"Момент инерции кольца: $I_{{b{i+1}}} = {fmt_sci(I_i)} \text{{ м}}^4$")
+                    st.markdown(rf"Несущая способность кольца: $N_{{b{i+1}}} = A_{{b{i+1}}} \cdot R_{{b,t}} = {area_i/1e6:.6f} \cdot {f_cd_val:.1f} \cdot 10^3 = {N_i:.1f}$ кН")
+                    st.markdown(rf"Жесткость кольца: $EI_{{b{i+1}}} = E_{{b,t}} \cdot I_{{b{i+1}}} = {E_b_val:.0f} \cdot {fmt_sci(I_i)} \cdot 10^3 = {EI_i:.1f}$ кН·м²")
+
+            
+            # --- Сталь ---
+            temp_steel_val = current_record.get('temp_t1')
+            gamma_st_val = steel_working_condition_coeff(temp_steel_val) if temp_steel_val is not None else 1.0
+            f_yd_val = gamma_st_val * steel_strength_normative
+            E_s_val = steel_elastic_modulus * gamma_st_val
+            
+            area_s = steel_ring_area(diameter, thickness)
+            N_s = area_s / 1e6 * f_yd_val * 1e3
+            
+            R_out_s = diameter / 2
+            R_in_s = R_out_s - thickness
+            I_s = (math.pi / 4) * (R_out_s**4 - R_in_s**4) / 1e12
+            EI_s = I_s * E_s_val * 1e3
+            
+            N_calc_total += N_s
+            total_stiffness_calc += EI_s
+            
+            with st.expander(f"Стальная оболочка"):
+                st.markdown(rf"Температура: $T_{{s}} = {temp_steel_val:.1f}^\circ\text{{C}}$")
+                st.markdown(rf"Коэфф. условий работы: $\gamma_{{st}}({temp_steel_val:.1f}) = {gamma_st_val:.2f}$")
+                st.markdown(rf"Сопротивление: $R_{{s,t}} = R_{{yn}} \cdot \gamma_{{st}} = {steel_strength_normative} \cdot {gamma_st_val:.2f} = {f_yd_val:.1f}$ МПа")
+                st.markdown(rf"Модуль упругости: $E_{{s,t}} = E_{{s}} \cdot \gamma_{{st}} = {steel_elastic_modulus} \cdot {gamma_st_val:.2f} = {E_s_val:.0f}$ МПа")
+                st.markdown(rf"Площадь оболочки: $A_{{s}} = {area_s/100:.1f} \text{{ см}}^2$")
+                st.markdown(rf"Момент инерции оболочки: $I_{{s}} = {fmt_sci(I_s)} \text{{ м}}^4$")
+                st.markdown(rf"Несущая способность оболочки: $N_{{s}} = A_{{s}} \cdot R_{{s,t}} = {area_s/1e6:.6f} \cdot {f_yd_val:.1f} \cdot 10^3 = {N_s:.1f}$ кН")
+                st.markdown(rf"Жесткость оболочки: $EI_{{s}} = E_{{s,t}} \cdot I_{{s}} = {E_s_val:.0f} \cdot {fmt_sci(I_s)} \cdot 10^3 = {EI_s:.1f}$ кН·м²")
+            
+            # --- Арматура ---
+            N_a = 0.0
+            EI_a = 0.0
+            if use_reinforcement:
+                temp_rebar_val = current_record.get('temp_t4')
+                gamma_st_rebar_val = steel_working_condition_coeff(temp_rebar_val) if temp_rebar_val is not None else 1.0
+                f_yd_rebar_val = gamma_st_rebar_val * rebar_strength_normative
+                E_s_rebar_val = steel_elastic_modulus * gamma_st_rebar_val
+                
+                area_rebar_total = (math.pi * rebar_diameter**2 / 4) * rebar_count
+                N_a = area_rebar_total / 1e6 * f_yd_rebar_val * 1e3
+                
+                # EI Rebar
+                rebar_dist = (diameter / 2) - thickness - 35 - (rebar_diameter / 2)
+                I_self = (math.pi * rebar_diameter**4) / 64
+                area_one = (math.pi * rebar_diameter**2) / 4
+                I_rebar_calc = (8 * I_self + 4 * area_one * rebar_dist**2) * 1e-12
+                EI_a = I_rebar_calc * E_s_rebar_val * 1e3
+                
+                N_calc_total += N_a
+                total_stiffness_calc += EI_a
+                
+                with st.expander(f"Арматура ({rebar_count}Ø{rebar_diameter})"):
+                    st.markdown(rf"Температура: $T_{{a}} = {temp_rebar_val:.1f}^\circ\text{{C}}$")
+                    st.markdown(rf"Коэфф. условий работы: $\gamma_{{st,a}}({temp_rebar_val:.1f}) = {gamma_st_rebar_val:.2f}$")
+                    st.markdown(rf"Сопротивление: $R_{{a,t}} = R_{{a}} \cdot \gamma_{{st,a}} = {rebar_strength_normative} \cdot {gamma_st_rebar_val:.2f} = {f_yd_rebar_val:.1f}$ МПа")
+                    st.markdown(rf"Модуль упругости: $E_{{a,t}} = E_{{s}} \cdot \gamma_{{st,a}} = {steel_elastic_modulus} \cdot {gamma_st_rebar_val:.2f} = {E_s_rebar_val:.0f}$ МПа")
+                    st.markdown(rf"Площадь арматуры (общая): $A_{{a}} = {area_rebar_total/100:.1f} \text{{ см}}^2$")
+                    st.markdown(rf"Момент инерции арматуры: $I_{{a}} = {fmt_sci(I_rebar_calc)} \text{{ м}}^4$")
+                    st.markdown(rf"Несущая способность арматуры: $N_{{a}} = A_{{a}} \cdot R_{{a,t}} = {area_rebar_total/1e6:.6f} \cdot {f_yd_rebar_val:.1f} \cdot 10^3 = {N_a:.1f}$ кН")
+                    st.markdown(rf"Жесткость арматуры: $EI_{{a}} = E_{{a,t}} \cdot I_{{a}} = {E_s_rebar_val:.0f} \cdot {fmt_sci(I_rebar_calc)} \cdot 10^3 = {EI_a:.1f}$ кН·м²")
+
+            # 3. Суммарная несущая способность N_total
+            st.markdown(f"**3. Суммарная несущая способность сечения** $N_{{total}}$")
+            
+            # Строка подстановки 
+            n_conc_sum = N_calc_total - N_s - N_a
+             
+            # Выводим формулу и подстановку в одну строку LaTeX с русскими единицами (через markdown для безопасности)
+            st.markdown(rf"$$N_{{total}} = \sum N_{{b,i}} + N_s + N_a = {n_conc_sum:.1f} + {N_s:.1f} + {N_a:.1f} = {N_calc_total:.1f}\text{{ кН}}$$")
+
+            
+            st.divider()
+
+            # 3. Полная жесткость EI
+            st.divider()
+
+            # 3. Полная жесткость EI
+            st.markdown(f"**3. Полная жесткость сечения** $(EI)_{{total}}$")
+            
+            # Conciseness for EI substitution
+            EI_conc = total_stiffness_calc - EI_s - EI_a
+            
+            # Use markdown math for Russian units
+            st.markdown(rf"$$(EI)_{{total}} = \sum (EI_{{b,i}}) + EI_s + EI_a = {EI_conc:.1f} + {EI_s:.1f} + {EI_a:.1f} = {total_stiffness_calc:.1f} \text{{ кН}}\cdot\text{{м}}^2$$")
+            
+            st.divider()
+
+            # 4. Критическая сила N_cr
+            st.markdown(f"**4. Критическая сила** $N_{{cr}}$")
+            
+            l_eff = height * effective_length_coefficient
+            if l_eff > 0 and total_stiffness_calc > 0:
+                N_cr_val = (math.pi ** 2) * total_stiffness_calc / (l_eff ** 2)
+            else:
+                N_cr_val = 0.0
+            
+            st.markdown(rf"$$N_{{cr}} = \frac{{\pi^2 \cdot (EI)_{{total}}}}{{(L_{{eff}})^2}} = \frac{{\pi^2 \cdot {total_stiffness_calc:.1f}}}{{({height} \cdot {effective_length_coefficient})^2}} = {N_cr_val:.1f} \text{{ кН}}$$")
+            
+            st.divider()
+
+            # 5. Условная гибкость lambda
+            st.markdown(f"**5. Условная гибкость** $\overline{{\lambda}}$")
+            
+            if N_cr_val > 0:
+                lambda_val = math.sqrt(N_calc_total / N_cr_val)
+            else:
+                lambda_val = 0.0
+            
+            st.markdown(rf"$$\overline{{\lambda}} = \sqrt{{\frac{{N_{{total}}}}{{N_{{cr}}}}}} = \sqrt{{\frac{{{N_calc_total:.1f}}}{{{N_cr_val:.1f}}}}} = {lambda_val:.3f}$$")
+            
+            st.divider()
+
+            # 6. Коэффициент продольного изгиба phi
+            st.markdown(f"**6. Коэффициент продольного изгиба** $\\varphi$")
+            
+            st.markdown(rf"$$\overline{{\lambda}} \le 6.5 \implies \varphi = \frac{{1 + \delta}}{{\overline{{\lambda}}}}$$")
+            
+            phi_val = get_reduction_coeff(lambda_val)
+            
+            st.markdown(rf"$$\varphi = {phi_val:.3f}$$")
+            
+            st.divider()
+
+            # 7. Итоговая несущая способность
+            st.markdown(f"**7. Итоговая несущая способность** $N_{{u}}$")
+            
+            N_final_val = N_calc_total * phi_val
+            
+            st.markdown(rf"$$N_{{u}} = N_{{total}} \cdot \varphi = {N_calc_total:.1f} \cdot {phi_val:.3f} = {N_final_val:.1f} \text{{ кН}}$$")
 
 with tab4:
     st.markdown('<div style="text-align:center; font-size:1.25em; font-weight:700; font-family:Segoe UI, Arial, sans-serif; margin-bottom:0.5em;">График нагрева сечения</div>', unsafe_allow_html=True)
