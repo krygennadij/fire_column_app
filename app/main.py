@@ -1072,7 +1072,7 @@ with tab2:
         # Основная линия
         line = alt.Chart(chart_df).mark_line(point=True, color="#d62728", strokeWidth=3).encode(
             x=alt.X("Время, мин", axis=alt.Axis(title="Время огневого воздействия, мин", titleFontSize=16)),
-            y=alt.Y("Несущая способность, кН", axis=alt.Axis(title="Несущая способность, кН", titleFontSize=16)),
+            y=alt.Y("Несущая способность, кН", axis=alt.Axis(title="Несущая способность, кН", titleFontSize=16, format=".0f")),
             tooltip=["Время, мин", "Несущая способность, кН"]
         )
         # Горизонтальная линия нормативной нагрузки
